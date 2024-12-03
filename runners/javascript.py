@@ -1,41 +1,52 @@
 import subprocess
+import argparse
 import json
-import os
 
-def run_nodejs_code_in_realtime(temp_file, language):
-        # Load JSON from a file
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(current_dir, 'config.json')
-        with open(config_path, 'r') as file:
-             data = json.load(file)
+def execute_js(code_file, language):
+    # Print the language argument
+    print(f"Running script in {language} language...")
 
-        command = data[language]
-        # Run the Node.js code using the `node` command
-        process = subprocess.Popen(
-            [command, temp_file],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+    with open('./runners/config.json', 'r') as file:
+        data = json.load(file)
 
-        # Read the output and error streams in real time
-        for line in process.stdout:
-            print(line, end="")  # Print each line as it is generated
+    command = data[language]
+    # Run the JavaScript file using Node.js
+    process = subprocess.Popen(
+        [command, code_file],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
-        # Wait for the process to finish and capture any remaining error output
-        process.wait()
-        if process.returncode != 0:
-            print("\nError:")
-            for line in process.stderr:
-                print(line, end="")  # Print error messages if any
+    # Read real-time output
+    while True:
+        output = process.stdout.readline()
+        if output == '' and process.poll() is not None:
+            print("Proess completed.")
+            break
+        if output:
+            print(f"Output: {output.strip()}")
 
-        return process.returncode
+    # Capture any error messages
+    stderr_output = process.stderr.read()
+    if stderr_output:
+        print(f"Error: {stderr_output.strip()}")
+
+def main():
+    # Set up argument parsing
+    parser = argparse.ArgumentParser(description='Execute a JavaScript file and print real-time output.')
+    
+    # First argument: JS file (positional)
+    parser.add_argument('code_file', type=str, help='The path to the code file')
+    
+    # Second argument: language (positional)
+    parser.add_argument('language', type=str, help='The language in which the script is written')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Execute the JavaScript file
+    execute_js(args.code_file, args.language)
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        temp_file = sys.argv[1]
-        language = sys.argv[2]
-        exit_code = run_nodejs_code_in_realtime(temp_file, language)
-    else:
-        print("No code provided")
+    main()

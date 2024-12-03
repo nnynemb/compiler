@@ -1,6 +1,7 @@
-import { spawn } from 'child_process';  // To run the code in a child process
-import fs from 'fs';  // To write code to a temporary file
-import { v4 as uuidv4 } from 'uuid';  // To create unique file names
+import { spawn } from 'child_process'; 
+import fs from 'fs'; 
+import path from 'path'; 
+import { v4 as uuidv4 } from 'uuid'; 
 
 const runCode = async (req, res) => {
     const { code, language } = req.body;
@@ -20,59 +21,51 @@ const runCode = async (req, res) => {
         return res.status(400).send({ error: "No code provided" });
     }
 
-    // Create a unique file name and save the code to it
     const uniqueId = uuidv4();
     const fileName = `temp-code-${uniqueId}.${extension}`;
-    const tempFilePath = `./codes/${fileName}`;
+    const tempFilePath = path.resolve('./codes', fileName);
 
     try {
-        // Save the code to the temporary file
-        fs.writeFileSync(tempFilePath, code);
-
-        // Choose the correct command to run based on language
-        const command = 'python3';
-        if (!command) {
-            return res.status(400).send({ error: 'Unsupported language' });
+        // Ensure the directory exists
+        if (!fs.existsSync('./codes')) {
+            fs.mkdirSync('./codes');
         }
 
-        // Set response headers for chunked transfer encoding
+        fs.writeFileSync(tempFilePath, code);
+
+        // Run the Python script
+        const command = 'python3';
+        const runnerScript = path.resolve('./runners/javascript.py');
+
         res.setHeader('Content-Type', 'text/plain');
-        res.flushHeaders();  // Flush headers immediately
+        res.setHeader('Transfer-Encoding', 'chunked');
+        res.flushHeaders();
 
-        const runnerScript = "./runners/javascript.py";
+        console.log("Starting to run the script...");
+        const child = spawn(command, [runnerScript, tempFilePath, language], { shell: true });
 
-        // Run the code using spawn
-        const child = spawn(command, [runnerScript, tempFilePath, language], {shell:true});
-
-        // Stream stdout chunks to the client
-        child.stdout.on('data', (data) => {
-            res.write(data.toString());  // Send output in chunks
+        // Stream stdout
+        child.stdout.on('data', (chunk) => {
+            console.log('stdout chunk:', chunk.toString()); // Debug log
+            res.write(chunk.toString()); // Send chunks to the client
         });
 
-        // Stream stderr chunks to the client
-        child.stderr.on('data', (data) => {
-            res.write(data.toString());  // Send error output in chunks
+        // Stream stderr (error stream)
+        child.stderr.on('data', (chunk) => {
+            console.log('stderr chunk:', chunk.toString()); // Debug log
+            res.write(`Error: ${chunk.toString()}`); // Send errors as chunks
         });
 
-        // Handle process close
         child.on('close', (code) => {
-            // Cleanup the temporary file after execution
-            fs.unlinkSync(tempFilePath);
-
-            // Close the response stream
-            res.end();
+            fs.unlinkSync(tempFilePath); // Clean up
+            res.end(); // End the stream
         });
 
-        // Handle errors in spawning the child process
         child.on('error', (err) => {
-            fs.unlinkSync(tempFilePath);
+            fs.unlinkSync(tempFilePath); // Clean up on error
             res.status(500).send({ error: err.message });
         });
-
     } catch (err) {
-        console.log(err);
-
-        // Handle errors during file write or other unexpected errors
         if (fs.existsSync(tempFilePath)) {
             fs.unlinkSync(tempFilePath);
         }
