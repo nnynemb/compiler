@@ -1,16 +1,21 @@
 import subprocess
 import argparse
 import json
+import sys
 
 def execute_js(code_file, language):
     # Print the language argument
-    print(f"Running script in {language} language...")
+    print(f"Running script in {language} language...", flush=True)
 
     with open('./runners/config.json', 'r') as file:
         data = json.load(file)
 
-    command = data[language]
-    # Run the JavaScript file using Node.js
+    command = data.get(language)
+    if not command:
+        print(f"Language {language} is not supported.", flush=True)
+        return
+
+    # Run the code file using the specified command
     process = subprocess.Popen(
         [command, code_file],
         stdout=subprocess.PIPE,
@@ -22,30 +27,30 @@ def execute_js(code_file, language):
     while True:
         output = process.stdout.readline()
         if output == '' and process.poll() is not None:
-            print("Proess completed.")
+            print("Process completed.", flush=True)
             break
         if output:
-            print(f"Output: {output.strip()}")
+            print(f"Output: {output.strip()}", flush=True)
 
     # Capture any error messages
     stderr_output = process.stderr.read()
     if stderr_output:
-        print(f"Error: {stderr_output.strip()}")
+        print(f"Error: {stderr_output.strip()}", flush=True)
 
 def main():
     # Set up argument parsing
-    parser = argparse.ArgumentParser(description='Execute a JavaScript file and print real-time output.')
-    
-    # First argument: JS file (positional)
+    parser = argparse.ArgumentParser(description='Execute a code file and print real-time output.')
+
+    # First argument: Code file (positional)
     parser.add_argument('code_file', type=str, help='The path to the code file')
-    
-    # Second argument: language (positional)
+
+    # Second argument: Language (positional)
     parser.add_argument('language', type=str, help='The language in which the script is written')
 
     # Parse arguments
     args = parser.parse_args()
 
-    # Execute the JavaScript file
+    # Execute the code file
     execute_js(args.code_file, args.language)
 
 if __name__ == "__main__":
