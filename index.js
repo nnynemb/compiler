@@ -2,6 +2,7 @@
 import express from 'express';
 import runCode from './util/runCode.js';
 import cors from "cors"
+import connect from "./config/db.config.js";
 // Initialize the app
 const app = express();
 
@@ -22,4 +23,5 @@ const port = 8000;
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running at http://localhost:${port}`);
+  connect();
 });
