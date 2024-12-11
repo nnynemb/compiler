@@ -50,6 +50,7 @@ const schema = buildSchema(`
 
   type Mutation {
     generateSession(language: String!, content: String!): Session
+    updateSession(id: ID!, language: String, content: String): Session
   }
 `);
 
@@ -76,6 +77,30 @@ const root = {
       return newSession;
     } catch (error) {
       throw new Error(`Error creating session: ${error.message}`);
+    }
+  },
+
+  // Update a session
+  updateSession: async ({ id, language, content }) => {
+    try {
+      // Create an object to store fields to update
+      const updates = {};
+      if (language) updates.language = language;
+      if (content) updates.content = content;
+
+      // Find the session by ID and update it
+      const updatedSession = await Session.findByIdAndUpdate(
+        id,
+        { ...updates, updatedAt: new Date() }, // Update fields and set `updatedAt`
+        { new: true } // Return the updated document
+      );
+
+      if (!updatedSession) {
+        throw new Error("Session not found");
+      }
+      return updatedSession;
+    } catch (error) {
+      throw new Error(`Error updating session: ${error.message}`);
     }
   },
 };
