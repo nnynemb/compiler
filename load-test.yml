@@ -1,0 +1,35 @@
+config:
+  target: "https://compiler-production-9622.up.railway.app" # Base URL of your API
+  phases:
+    - duration: 60        # Test duration in seconds
+      arrivalRate: 10     # Requests per second
+  defaults:
+    headers:
+      User-Agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0"
+      Accept: "*/*"
+      Accept-Language: "en,en-US;q=0.5"
+      Content-Type: "application/json"
+      Origin: "https://editor.nnynemb.com"
+      Referer: "https://editor.nnynemb.com"
+scenarios:
+  - flow:
+      - post:
+          url: "/run-code"
+          json:
+            code: |
+              //This is example of a for loop. Guess the output before running
+              for(var i=0;i<10;i++){
+                setTimeout(()=>{
+                  console.log(i);
+                },1000)
+              }
+
+              console.log("=====================")
+
+              //This is example of a for loop. Guess the output before running
+              for(let i=0;i<10;i++){
+                setTimeout(()=>{
+                  console.log(i);
+                },1000)
+              }
+            language: "javascript"
