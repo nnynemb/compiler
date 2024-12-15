@@ -4,8 +4,9 @@ import runCode from './util/runCode.js';
 import cors from "cors";
 import { graphqlHTTP } from 'express-graphql';
 import { buildSchema } from 'graphql';
-import mongoose from "mongoose"; // MongoDB ODM
 import connect from "./config/db.config.js"; // Your DB connection utility
+import Session from './modules/session/session.model.js';
+import User from './modules/user/user.model.js';
 
 // Initialize the app
 const app = express();
@@ -13,17 +14,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// MongoDB Session Schema
-const sessionSchema = new mongoose.Schema({
-  language: { type: String, required: true },
-  content: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-});
-
-// Mongoose Model
-const Session = mongoose.model("Session", sessionSchema);
 
 // Set up a simple route
 app.post('/run-code', (req, res) => {
@@ -44,13 +34,29 @@ const schema = buildSchema(`
     updatedAt: String!
   }
 
+  type User {
+    id: ID!
+    username: String!
+    email: String!
+    phone: String!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type RegisterUser {
+     username: String!
+     email: String
+  }
+
   type Query {
     getSession(id: ID!): Session
+    getUser(id: ID!): User
   }
 
   type Mutation {
     generateSession(language: String!, content: String!): Session
     updateSession(id: ID!, language: String, content: String): Session
+    registerUser(username: String, email: String): RegisterUser
   }
 `);
 
@@ -80,6 +86,19 @@ const root = {
     }
   },
 
+  // Get user by Id
+  getUser: async ({ id }) => {
+    try{
+       const user = await User.findById(id);
+       if(!user){
+          throw new Error(`User not found`);
+       }
+       return user;
+    } catch(error){
+      throw new Error(`Error fetching user: ${error.message}`);
+    }
+  },
+
   // Update a session
   updateSession: async ({ id, language, content }) => {
     try {
@@ -91,7 +110,7 @@ const root = {
       // Find the session by ID and update it
       const updatedSession = await Session.findByIdAndUpdate(
         id,
-        { ...updates, updatedAt: new Date() }, // Update fields and set `updatedAt`
+        { ...updates }, // Update fields and set `updatedAt`
         { new: true } // Return the updated document
       );
 
@@ -103,6 +122,17 @@ const root = {
       throw new Error(`Error updating session: ${error.message}`);
     }
   },
+
+  // registeer a new user - mutation
+  registerUser: async ({ username, email }) => {
+     try {
+        const user = new User({username, email});
+        await user.save();
+        return user;
+     } catch (error) {
+       throw new Error(`Error registering user: ${error.message}`);
+     }
+  }
 };
 
 // Set up GraphQL endpoint
