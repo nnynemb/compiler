@@ -7,10 +7,64 @@ import { buildSchema } from 'graphql';
 import connect from "./config/db.config.js"; // Your DB connection utility
 import Session from './modules/session/session.model.js';
 import User from './modules/user/user.model.js';
+import redis from "redis";
+
+// Create Redis client for publishing
+const redisClient = redis.createClient({
+  socket: {
+    host: process.env.REDIS_URL, // Replace with your Redis host
+    port: process.env.REDIS_PORT, // Replace with your Redis port
+  },
+  password: process.env.REDIS_PASSWORD // Add your Redis password here
+});
+
+redisClient.on('error', (err) => console.error('Redis Client Error', err));
+
+async function connectToRedis() {
+  try {
+    await redisClient.connect();
+    console.log('Connected to Redis');
+
+    // Perform Redis operations (example)
+    await redisClient.set('mykey', 'Hello from Node.js!');
+    console.log('Value set successfully');
+
+    const value = await redisClient.get('mykey');
+    console.log('Retrieved value:', value);
+  } catch (err) {
+    console.error('Error connecting to Redis:', err);
+  }
+}
+
+// Create Redis client for subscription
+const redisSubscriber = redis.createClient({
+  socket: {
+    host: process.env.REDIS_URL, // Replace with your Redis host
+    port: process.env.REDIS_PORT, // Replace with your Redis port
+  },
+  password: process.env.REDIS_PASSWORD // Add your Redis password here
+});
+
+redisSubscriber.on('error', (err) => console.error('Redis Subscriber Error', err));
+
+async function connectRedisSubscriber() {
+  try {
+    await redisSubscriber.connect();
+    console.log('Connected to Redis subscriber');
+
+    // Subscribe to all channels using wildcard pattern "*"
+    redisSubscriber.subscribe('your_session_id', (message) => {
+      console.log('Received message from Redis channel:', message);
+    });
+
+    console.log('Subscribed to all channels.');
+  } catch (err) {
+    console.error('Error subscribing to Redis channels:', err);
+  }
+}
 
 // Initialize the app
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -57,6 +111,7 @@ const schema = buildSchema(`
     generateSession(language: String!, content: String!): Session
     updateSession(id: ID!, language: String, content: String): Session
     registerUser(username: String, email: String): RegisterUser
+    publishSession(id: ID!, language: String, content: String): Session
   }
 `);
 
@@ -88,13 +143,13 @@ const root = {
 
   // Get user by Id
   getUser: async ({ id }) => {
-    try{
-       const user = await User.findById(id);
-       if(!user){
-          throw new Error(`User not found`);
-       }
-       return user;
-    } catch(error){
+    try {
+      const user = await User.findById(id);
+      if (!user) {
+        throw new Error(`User not found`);
+      }
+      return user;
+    } catch (error) {
       throw new Error(`Error fetching user: ${error.message}`);
     }
   },
@@ -102,16 +157,14 @@ const root = {
   // Update a session
   updateSession: async ({ id, language, content }) => {
     try {
-      // Create an object to store fields to update
       const updates = {};
       if (language) updates.language = language;
       if (content) updates.content = content;
 
-      // Find the session by ID and update it
       const updatedSession = await Session.findByIdAndUpdate(
         id,
-        { ...updates }, // Update fields and set `updatedAt`
-        { new: true } // Return the updated document
+        { ...updates },
+        { new: true }
       );
 
       if (!updatedSession) {
@@ -123,16 +176,22 @@ const root = {
     }
   },
 
-  // registeer a new user - mutation
+  // Register a new user
   registerUser: async ({ username, email }) => {
-     try {
-        const user = new User({username, email});
-        await user.save();
-        return user;
-     } catch (error) {
-       throw new Error(`Error registering user: ${error.message}`);
-     }
-  }
+    try {
+      const user = new User({ username, email });
+      await user.save();
+      return user;
+    } catch (error) {
+      throw new Error(`Error registering user: ${error.message}`);
+    }
+  },
+
+  publishSession: async ({ id, language, content }) => {
+    const data = JSON.stringify({ language, content });
+    redisClient.publish(id, data);
+    return { id };
+  },
 };
 
 // Set up GraphQL endpoint
@@ -146,5 +205,7 @@ app.use('/graphql', graphqlHTTP({
 app.listen(port, async () => {
   console.log(`Server is running at http://localhost:${port}`);
   console.log(`GraphQL API is available at http://localhost:${port}/graphql`);
+  await connectToRedis();
+  await connectRedisSubscriber();
   await connect(); // Connect to MongoDB
 });
