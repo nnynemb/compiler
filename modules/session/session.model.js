@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 const sessionSchema = new mongoose.Schema({
     language: { type: String, required: true },
     content: { type: String, required: true },
-    userId: { type: mongoose.Types.ObjectId, required: true, ref: 'User' }
+    userId: { type: mongoose.Types.ObjectId, required: false, ref: 'User' }
 }, {
     timestamps: true
 });

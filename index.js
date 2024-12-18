@@ -1,67 +1,63 @@
-// Import express
 import express from 'express';
 import runCode from './util/runCode.js';
-import cors from "cors";
+import cors from 'cors';
 import { graphqlHTTP } from 'express-graphql';
 import { buildSchema } from 'graphql';
-import connect from "./config/db.config.js"; // Your DB connection utility
+import connect from './config/db.config.js'; // Your DB connection utility
 import Session from './modules/session/session.model.js';
 import User from './modules/user/user.model.js';
-import redis from "redis";
+import Redis from 'ioredis'; // Import ioredis
+import http from 'http';
+import { Server as SocketIoServer } from 'socket.io'; // Correct import for Socket.IO
 
-// Create Redis client for publishing
-const redisClient = redis.createClient({
-  socket: {
-    host: process.env.REDIS_URL, // Replace with your Redis host
-    port: process.env.REDIS_PORT, // Replace with your Redis port
-  },
-  password: process.env.REDIS_PASSWORD // Add your Redis password here
+// Create a single Redis client for both publishing and subscribing
+const redisClient = new Redis({
+  host: process.env.REDIS_URL, // Replace with your Redis host
+  port: process.env.REDIS_PORT, // Replace with your Redis port
+  password: process.env.REDIS_PASSWORD, // Add your Redis password here
 });
 
 redisClient.on('error', (err) => console.error('Redis Client Error', err));
 
-async function connectToRedis() {
-  try {
-    await redisClient.connect();
-    console.log('Connected to Redis');
-
-    // Perform Redis operations (example)
-    await redisClient.set('mykey', 'Hello from Node.js!');
-    console.log('Value set successfully');
-
-    const value = await redisClient.get('mykey');
-    console.log('Retrieved value:', value);
-  } catch (err) {
-    console.error('Error connecting to Redis:', err);
-  }
-}
-
-// Create Redis client for subscription
-const redisSubscriber = redis.createClient({
-  socket: {
-    host: process.env.REDIS_URL, // Replace with your Redis host
-    port: process.env.REDIS_PORT, // Replace with your Redis port
-  },
-  password: process.env.REDIS_PASSWORD // Add your Redis password here
-});
+// Duplicate the connection for subscribing
+const redisSubscriber = redisClient.duplicate(); 
 
 redisSubscriber.on('error', (err) => console.error('Redis Subscriber Error', err));
 
-async function connectRedisSubscriber() {
+// Maintain a list of active sockets
+let activeSockets = [];
+
+// Wait for Redis connection to be established before using it
+const connectRedis = async () => {
   try {
-    await redisSubscriber.connect();
-    console.log('Connected to Redis subscriber');
+    // Check if Redis is already connected, if not, connect
+    if (!redisClient.status || redisClient.status === 'disconnected') {
+      console.log('Connecting to Redis...');
+      await redisClient.connect();
+    }
+
+    if (!redisSubscriber.status || redisSubscriber.status === 'disconnected') {
+      console.log('Connecting to Redis subscriber...');
+      await redisSubscriber.connect();
+    }
+
+    console.log('Connected to Redis (Publisher and Subscriber)');
 
     // Subscribe to all channels using wildcard pattern "*"
-    redisSubscriber.subscribe('your_session_id', (message) => {
-      console.log('Received message from Redis channel:', message);
-    });
-
+    await redisSubscriber.psubscribe('*');
     console.log('Subscribed to all channels.');
+
+    // Listen for messages from any channel
+    redisSubscriber.on('pmessage', (pattern, channel, message) => {
+      console.log(`Received message from channel ${channel}:`, message);
+
+      // Send message to all connected sockets
+      io.to(channel).emit('redisMessage', { channel, message });
+    });
   } catch (err) {
-    console.error('Error subscribing to Redis channels:', err);
+    console.error('Error connecting to Redis:', err);
   }
-}
+};
 
 // Initialize the app
 const app = express();
@@ -122,7 +118,7 @@ const root = {
     try {
       const session = await Session.findById(id);
       if (!session) {
-        throw new Error("Session not found");
+        throw new Error('Session not found');
       }
       return session;
     } catch (error) {
@@ -168,7 +164,7 @@ const root = {
       );
 
       if (!updatedSession) {
-        throw new Error("Session not found");
+        throw new Error('Session not found');
       }
       return updatedSession;
     } catch (error) {
@@ -187,25 +183,65 @@ const root = {
     }
   },
 
+  // Publish session
   publishSession: async ({ id, language, content }) => {
     const data = JSON.stringify({ language, content });
-    redisClient.publish(id, data);
+    await redisClient.publish(id, data); // Publish to specific channel
     return { id };
   },
 };
 
 // Set up GraphQL endpoint
-app.use('/graphql', graphqlHTTP({
-  schema: schema,
-  rootValue: root,
-  graphiql: true, // Enable GraphiQL interface
-}));
+app.use(
+  '/graphql',
+  graphqlHTTP({
+    schema: schema,
+    rootValue: root,
+    graphiql: true, // Enable GraphiQL interface
+  })
+);
 
-// Start the server
-app.listen(port, async () => {
+// Create an HTTP server
+const server = http.createServer(app);
+
+// Create Socket.IO instance attached to the HTTP server
+// Create Socket.IO instance with CORS settings
+const io = new SocketIoServer(server, {
+  cors: {
+    origin: '*', // Allow all origins
+    methods: ['GET', 'POST'], // Allowed HTTP methods
+    allowedHeaders: ['Content-Type'], // Optional: allowed headers
+    credentials: false, // Set to true if authentication (cookies, etc.) is needed
+  },
+});
+
+// Handle Socket.IO connections
+io.on('connection', (socket) => {
+  console.log('A client connected via Socket.IO');
+
+  // Add the socket to the list of active sockets
+  activeSockets.push(socket);
+
+  // Listen for messages from clients
+  socket.on('clientMessage', (data) => {
+    console.log('Message from client:', data);
+  });
+
+  // Handle disconnections
+  socket.on('disconnect', () => {
+    console.log('A client disconnected');
+
+    // Remove the socket from the list of active sockets
+    activeSockets = activeSockets.filter(s => s !== socket);
+  });
+});
+
+// Start the server and connect to Redis and MongoDB
+server.listen(port, async () => {
   console.log(`Server is running at http://localhost:${port}`);
   console.log(`GraphQL API is available at http://localhost:${port}/graphql`);
-  await connectToRedis();
-  await connectRedisSubscriber();
-  await connect(); // Connect to MongoDB
+
+  // Connect to Redis and WebSocket
+  await connectRedis();
+  connect(); // Connect to MongoDB
 });
