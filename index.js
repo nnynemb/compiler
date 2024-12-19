@@ -20,7 +20,7 @@ const redisClient = new Redis({
 redisClient.on('error', (err) => console.error('Redis Client Error', err));
 
 // Duplicate the connection for subscribing
-const redisSubscriber = redisClient.duplicate(); 
+const redisSubscriber = redisClient.duplicate();
 
 redisSubscriber.on('error', (err) => console.error('Redis Subscriber Error', err));
 
@@ -52,7 +52,8 @@ const connectRedis = async () => {
       console.log(`Received message from channel ${channel}:`, message);
 
       // Send message to all connected sockets
-      io.to(channel).emit('redisMessage', { channel, message });
+      const msg = JSON.parse(message);
+      io.to(channel).emit(channel, { channel, ...msg });
     });
   } catch (err) {
     console.error('Error connecting to Redis:', err);
@@ -222,9 +223,17 @@ io.on('connection', (socket) => {
   // Add the socket to the list of active sockets
   activeSockets.push(socket);
 
-  // Listen for messages from clients
-  socket.on('clientMessage', (data) => {
-    console.log('Message from client:', data);
+  // Listen for any event from the client
+  socket.onAny((event, ...args) => {
+    if (event === 'joinRoom') {
+      const room = args[0];
+      console.log(`Joining room: ${room}`);
+      socket.join(room); // Join the room
+    } else {
+      console.log(`Received event: ${event}`, args);
+      const { language, code } = args[0];
+      root.publishSession({ id: event, language, content: code });
+    }
   });
 
   // Handle disconnections
