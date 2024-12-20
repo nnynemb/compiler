@@ -250,6 +250,8 @@ server.listen(port, async () => {
   console.log(`Server is running at http://localhost:${port}`);
   console.log(`GraphQL API is available at http://localhost:${port}/graphql`);
 
+  console.log("Dependent variables :", process.env.REDIS_URL, process.env.REDIS_PORT, process.env.REDIS_PASSWORD, process.env.MONGOURL, process.env.PORT);
+
   // Connect to Redis and WebSocket
   await connectRedis();
   connect(); // Connect to MongoDB
