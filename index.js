@@ -185,8 +185,9 @@ const root = {
   },
 
   // Publish session
-  publishSession: async ({ id, language, content }) => {
-    const data = JSON.stringify({ language, content });
+  publishSession: async ({ id, language, content, senderSocketId }) => {
+    const data = JSON.stringify({ language, content, senderSocketId });
+    console.log(`Publishing session to channel ${id}:`, data);
     await redisClient.publish(id, data); // Publish to specific channel
     return { id };
   },
@@ -230,9 +231,9 @@ io.on('connection', (socket) => {
       console.log(`Joining room: ${room}`);
       socket.join(room); // Join the room
     } else {
-      console.log(`Received event: ${event}`, args);
+      console.log(`Received event: ${event}`, args, socket.id);
       const { language, code } = args[0];
-      root.publishSession({ id: event, language, content: code });
+      root.publishSession({ id: event, language, content: code, senderSocketId: socket.id });
     }
   });
 
