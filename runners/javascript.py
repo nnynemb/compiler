@@ -2,10 +2,10 @@ import subprocess
 import argparse
 import json
 import sys
+import threading
 
 def execute_js(code_file, language):
-    # Print the language argument
-
+    # Load the command configuration
     with open('./runners/config.json', 'r') as file:
         data = json.load(file)
 
@@ -14,7 +14,7 @@ def execute_js(code_file, language):
         print(f"Language {language} is not supported.", flush=True)
         return
 
-    # Run the code file using the specified command
+    # Start the subprocess
     process = subprocess.Popen(
         [command, code_file],
         stdout=subprocess.PIPE,
@@ -22,19 +22,32 @@ def execute_js(code_file, language):
         text=True
     )
 
-    # Read real-time output
-    while True:
-        output = process.stdout.readline()
-        if output == '' and process.poll() is not None:
-            print("", flush=True)
-            break
-        if output:
-            print(f"{output.strip()}", flush=True)
+    # Timer to enforce a 15-second timeout
+    def terminate_process():
+        if process.poll() is None:  # Check if process is still running
+            process.terminate()
+            print("Execution timed out after 15 seconds.", flush=True)
 
-    # Capture any error messages
-    stderr_output = process.stderr.read()
-    if stderr_output:
-        print(f"{stderr_output.strip()}", flush=True)
+    timer = threading.Timer(15, terminate_process)
+    timer.start()
+
+    try:
+        # Read real-time output
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                print(f"{output.strip()}", flush=True)
+
+        # Capture any error messages
+        stderr_output = process.stderr.read()
+        if stderr_output:
+            print(f"{stderr_output.strip()}", flush=True)
+
+    finally:
+        # Ensure the timer is canceled if the process finishes in time
+        timer.cancel()
 
 def main():
     # Set up argument parsing
