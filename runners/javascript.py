@@ -5,7 +5,6 @@ import sys
 
 def execute_js(code_file, language):
     # Print the language argument
-    print(f"Running script in {language} language...", flush=True)
 
     with open('./runners/config.json', 'r') as file:
         data = json.load(file)
@@ -27,15 +26,15 @@ def execute_js(code_file, language):
     while True:
         output = process.stdout.readline()
         if output == '' and process.poll() is not None:
-            print("Process completed.", flush=True)
+            print("", flush=True)
             break
         if output:
-            print(f"Output: {output.strip()}", flush=True)
+            print(f"{output.strip()}", flush=True)
 
     # Capture any error messages
     stderr_output = process.stderr.read()
     if stderr_output:
-        print(f"Error: {stderr_output.strip()}", flush=True)
+        print(f"{stderr_output.strip()}", flush=True)
 
 def main():
     # Set up argument parsing

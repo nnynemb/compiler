@@ -35,21 +35,17 @@ const runCode = async (req, res, io) => { // IO stands for soicket IO
 
         fs.writeFileSync(tempFilePath, code);
 
-        console.log("Starting to run the script...");
         const child = spawn('python3', ['./runners/javascript.py', tempFilePath, language], {
             shell: true,
         });
 
         // Stream stdout in chunks
         child.stdout.on('data', (chunk) => {
-            console.log('stdout chunk:', chunk.toString()); // Debug log        
-            console.log("Emitting the output to the client...", sessionId);
             io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
         });
 
         // Stream stderr in chunks
         child.stderr.on('data', (chunk) => {
-            console.log('stderr chunk:', chunk.toString()); // Debug log
             io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
         });
 
@@ -57,7 +53,6 @@ const runCode = async (req, res, io) => { // IO stands for soicket IO
         child.on('close', (code) => {
             console.log(`Process exited with code: ${code}`);
             fs.unlinkSync(tempFilePath); // Clean up
-            io.to(sessionId).emit('output', { sessionId, output: `Process exited with code: ${code}`});
             io.to(sessionId).emit('command', { sessionId, command: 'end' });
         });
 

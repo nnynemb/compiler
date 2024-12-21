@@ -49,8 +49,6 @@ const connectRedis = async () => {
 
     // Listen for messages from any channel
     redisSubscriber.on('pmessage', (pattern, channel, message) => {
-      console.log(`Received message from channel ${channel}:`, message);
-
       // Send message to all connected sockets
       const msg = JSON.parse(message);
       io.to(channel).emit(channel, { channel, ...msg });
@@ -186,7 +184,6 @@ const root = {
   // Publish session
   publishSession: async ({ id, ...data }) => {
     const stringifiedData = typeof data === 'string' ? data : JSON.stringify({ ...data });
-    console.log(`Publishing session to channel ${id}:`, stringifiedData);
     await redisClient.publish(id, stringifiedData); // Publish to specific channel
     return { id };
   },
@@ -218,8 +215,6 @@ const io = new SocketIoServer(server, {
 
 // Handle Socket.IO connections
 io.on('connection', (socket) => {
-  console.log('A client connected via Socket.IO');
-
   // Add the socket to the list of active sockets
   activeSockets.push(socket);
 
@@ -227,20 +222,16 @@ io.on('connection', (socket) => {
   socket.onAny((event, ...args) => {
     if (event === 'joinRoom') {
       const room = args[0];
-      console.log(`Joining room: ${room}`);
       socket.join(room); // Join the room
     } else {
       const { language, code, ...others } = args[0];
       const publisher = { id: event, language, content: code, senderSocketId: socket.id, ...others };
-      console.log('Received event:', event, publisher);
       root.publishSession(publisher);
     }
   });
 
   // Handle disconnections
   socket.on('disconnect', () => {
-    console.log('A client disconnected');
-
     // Remove the socket from the list of active sockets
     activeSockets = activeSockets.filter(s => s !== socket);
   });
