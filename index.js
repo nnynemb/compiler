@@ -68,7 +68,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Set up a simple route
 app.post('/run-code', (req, res) => {
-  runCode(req, res);
+  runCode(req, res, io);
 });
 
 // Define the port the server will listen on
@@ -108,7 +108,6 @@ const schema = buildSchema(`
     generateSession(language: String!, content: String!): Session
     updateSession(id: ID!, language: String, content: String): Session
     registerUser(username: String, email: String): RegisterUser
-    publishSession(id: ID!, language: String, content: String): Session
   }
 `);
 
@@ -185,10 +184,10 @@ const root = {
   },
 
   // Publish session
-  publishSession: async ({ id, language, content, senderSocketId }) => {
-    const data = JSON.stringify({ language, content, senderSocketId });
-    console.log(`Publishing session to channel ${id}:`, data);
-    await redisClient.publish(id, data); // Publish to specific channel
+  publishSession: async ({ id, ...data }) => {
+    const stringifiedData = typeof data === 'string' ? data : JSON.stringify({ ...data });
+    console.log(`Publishing session to channel ${id}:`, stringifiedData);
+    await redisClient.publish(id, stringifiedData); // Publish to specific channel
     return { id };
   },
 };
@@ -231,9 +230,10 @@ io.on('connection', (socket) => {
       console.log(`Joining room: ${room}`);
       socket.join(room); // Join the room
     } else {
-      console.log(`Received event: ${event}`, args, socket.id);
-      const { language, code } = args[0];
-      root.publishSession({ id: event, language, content: code, senderSocketId: socket.id });
+      const { language, code, ...others } = args[0];
+      const publisher = { id: event, language, content: code, senderSocketId: socket.id, ...others };
+      console.log('Received event:', event, publisher);
+      root.publishSession(publisher);
     }
   });
 

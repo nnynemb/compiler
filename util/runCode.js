@@ -3,8 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-const runCode = async (req, res) => {
-    const { code, language } = req.body;
+const runCode = async (req, res, io) => { // IO stands for soicket IO
+    const { code, language, sessionId } = req.body;
+    io.to(sessionId).emit('command', { sessionId, command: 'start' });
+    res.status(200).send("");
     const languages = {
         javascript: 'js',
         python: 'py',
@@ -33,10 +35,6 @@ const runCode = async (req, res) => {
 
         fs.writeFileSync(tempFilePath, code);
 
-        // Set headers for streaming
-        res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('Transfer-Encoding', 'chunked');
-
         console.log("Starting to run the script...");
         const child = spawn('python3', ['./runners/javascript.py', tempFilePath, language], {
             shell: true,
@@ -44,35 +42,39 @@ const runCode = async (req, res) => {
 
         // Stream stdout in chunks
         child.stdout.on('data', (chunk) => {
-            console.log('stdout chunk:', chunk.toString()); // Debug log
-            res.write(chunk.toString());
+            console.log('stdout chunk:', chunk.toString()); // Debug log        
+            console.log("Emitting the output to the client...", sessionId);
+            io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
         });
 
         // Stream stderr in chunks
         child.stderr.on('data', (chunk) => {
             console.log('stderr chunk:', chunk.toString()); // Debug log
-            res.write(`Error: ${chunk.toString()}`);
+            io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
         });
 
         // Handle process close
         child.on('close', (code) => {
             console.log(`Process exited with code: ${code}`);
             fs.unlinkSync(tempFilePath); // Clean up
-            res.end(); // End the response stream
+            io.to(sessionId).emit('output', { sessionId, output: `Process exited with code: ${code}`});
+            io.to(sessionId).emit('command', { sessionId, command: 'end' });
         });
 
         // Handle process errors
         child.on('error', (err) => {
             console.error('Child process error:', err.message);
             fs.unlinkSync(tempFilePath); // Clean up
-            res.status(500).send({ error: err.message });
+            io.to(sessionId).emit('output', { sessionId, output: err.message });
+            io.to(sessionId).emit('command', { sessionId, command: 'end' });
         });
     } catch (err) {
         if (fs.existsSync(tempFilePath)) {
             fs.unlinkSync(tempFilePath);
         }
         console.error('Error:', err.message);
-        res.status(500).send({ error: err.message });
+        io.to(sessionId).emit('output', { sessionId, output: err.message });
+        io.to(sessionId).emit('command', { sessionId, command: 'end' });
     }
 };
 
