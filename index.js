@@ -230,7 +230,7 @@ io.on('connection', (socket) => {
 
   // Handle disconnections
   socket.on('disconnect', () => {
-    socket.leaveAll(); // Leave all rooms
+    // socket.leaveAll(); // Leave all rooms
     console.log('Socket disconnected:', socket.id);
     // Remove the socket from the list of active sockets
   });
