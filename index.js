@@ -215,11 +215,9 @@ const io = new SocketIoServer(server, {
 
 // Handle Socket.IO connections
 io.on('connection', (socket) => {
-  // Add the socket to the list of active sockets
-  activeSockets.push(socket);
-
   // Listen for any event from the client
   socket.onAny((event, ...args) => {
+    console.log('Received event:', event, args);
     if (event === 'joinRoom') {
       const room = args[0];
       socket.join(room); // Join the room
@@ -232,8 +230,9 @@ io.on('connection', (socket) => {
 
   // Handle disconnections
   socket.on('disconnect', () => {
+    socket.leaveAll(); // Leave all rooms
+    console.log('Socket disconnected:', socket.id);
     // Remove the socket from the list of active sockets
-    activeSockets = activeSockets.filter(s => s !== socket);
   });
 });
 
