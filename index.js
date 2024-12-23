@@ -206,3 +206,5 @@ server.listen(port, async () => {
 
   connect(); // Connect to MongoDB
 });
+
+//sample deployment script
