@@ -9,54 +9,19 @@ import User from './modules/user/user.model.js';
 import Redis from 'ioredis'; // Import ioredis
 import http from 'http';
 import { Server as SocketIoServer } from 'socket.io'; // Correct import for Socket.IO
+import { createAdapter } from '@socket.io/redis-adapter'; // Import Redis Adapter
 
-// Create a single Redis client for both publishing and subscribing
-const redisClient = new Redis({
-  host: process.env.REDIS_URL, // Replace with your Redis host
-  port: process.env.REDIS_PORT, // Replace with your Redis port
-  password: process.env.REDIS_PASSWORD, // Add your Redis password here
-});
+// Create Redis clients for the adapter
+const redisHost = process.env.REDIS_URL || 'localhost'; // Replace with your Redis host
+const redisPort = process.env.REDIS_PORT || 6379; // Replace with your Redis port
+const redisPassword = process.env.REDIS_PASSWORD || ''; // Add your Redis password here if needed
 
-redisClient.on('error', (err) => console.error('Redis Client Error', err));
+const pubClient = new Redis({ host: redisHost, port: redisPort, password: redisPassword });
+const subClient = pubClient.duplicate();
 
-// Duplicate the connection for subscribing
-const redisSubscriber = redisClient.duplicate();
-
-redisSubscriber.on('error', (err) => console.error('Redis Subscriber Error', err));
-
-// Maintain a list of active sockets
-let activeSockets = [];
-
-// Wait for Redis connection to be established before using it
-const connectRedis = async () => {
-  try {
-    // Check if Redis is already connected, if not, connect
-    if (!redisClient.status || redisClient.status === 'disconnected') {
-      console.log('Connecting to Redis...');
-      await redisClient.connect();
-    }
-
-    if (!redisSubscriber.status || redisSubscriber.status === 'disconnected') {
-      console.log('Connecting to Redis subscriber...');
-      await redisSubscriber.connect();
-    }
-
-    console.log('Connected to Redis (Publisher and Subscriber)');
-
-    // Subscribe to all channels using wildcard pattern "*"
-    await redisSubscriber.psubscribe('*');
-    console.log('Subscribed to all channels.');
-
-    // Listen for messages from any channel
-    redisSubscriber.on('pmessage', (pattern, channel, message) => {
-      // Send message to all connected sockets
-      const msg = JSON.parse(message);
-      io.to(channel).emit(channel, { channel, ...msg });
-    });
-  } catch (err) {
-    console.error('Error connecting to Redis:', err);
-  }
-};
+// Handle Redis errors
+pubClient.on('error', (err) => console.error('Redis Publisher Error:', err));
+subClient.on('error', (err) => console.error('Redis Subscriber Error:', err));
 
 // Initialize the app
 const app = express();
@@ -70,7 +35,7 @@ app.post('/run-code', (req, res) => {
 });
 
 // Define the port the server will listen on
-const port = 8000;
+const port = process.env.PORT || 8000;
 
 // Set up GraphQL
 // Define GraphQL schema
@@ -180,13 +145,6 @@ const root = {
       throw new Error(`Error registering user: ${error.message}`);
     }
   },
-
-  // Publish session
-  publishSession: async ({ id, ...data }) => {
-    const stringifiedData = typeof data === 'string' ? data : JSON.stringify({ ...data });
-    await redisClient.publish(id, stringifiedData); // Publish to specific channel
-    return { id };
-  },
 };
 
 // Set up GraphQL endpoint
@@ -202,8 +160,7 @@ app.use(
 // Create an HTTP server
 const server = http.createServer(app);
 
-// Create Socket.IO instance attached to the HTTP server
-// Create Socket.IO instance with CORS settings
+// Create Socket.IO instance with Redis Adapter
 const io = new SocketIoServer(server, {
   cors: {
     origin: '*', // Allow all origins
@@ -213,37 +170,39 @@ const io = new SocketIoServer(server, {
   },
 });
 
+// Attach Redis Adapter to Socket.IO
+io.adapter(createAdapter(pubClient, subClient));
+
 // Handle Socket.IO connections
 io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id);
+
   // Listen for any event from the client
   socket.onAny((event, ...args) => {
-    console.log('Received event:', event, args);
     if (event === 'joinRoom') {
       const room = args[0];
       socket.join(room); // Join the room
     } else {
       const { language, code, ...others } = args[0];
-      const publisher = { id: event, language, content: code, senderSocketId: socket.id, ...others };
-      root.publishSession(publisher);
+      const data = { id: event, channel: event, language, content: code, senderSocketId: socket.id, ...others };
+      sendSocketMessage(event, event, data);
     }
   });
 
-  // Handle disconnections
   socket.on('disconnect', () => {
-    // socket.leaveAll(); // Leave all rooms
+    socket.leaveAll(); // Leave all rooms
     console.log('Socket disconnected:', socket.id);
-    // Remove the socket from the list of active sockets
   });
 });
 
-// Start the server and connect to Redis and MongoDB
+function sendSocketMessage(room, channel, data) {
+  io.to(room).emit(channel, data);
+}
+
+// Start the server and connect to MongoDB
 server.listen(port, async () => {
   console.log(`Server is running at http://localhost:${port}`);
   console.log(`GraphQL API is available at http://localhost:${port}/graphql`);
 
-  console.log("Dependent variables :", process.env.REDIS_URL, process.env.REDIS_PORT, process.env.REDIS_PASSWORD, process.env.MONGOURL, process.env.PORT);
-
-  // Connect to Redis and WebSocket
-  await connectRedis();
   connect(); // Connect to MongoDB
 });
