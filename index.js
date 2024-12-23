@@ -25,7 +25,13 @@ subClient.on('error', (err) => console.error('Redis Subscriber Error:', err));
 
 // Initialize the app
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: '*', // Replace '*' with specific origin(s) in production
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+  credentials: true, // Allow cookies if needed
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
