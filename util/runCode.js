@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 const runCode = async (req, res, io) => { // IO stands for soicket IO
     const { code, language, sessionId } = req.body;
     io.to(sessionId).emit('command', { sessionId, command: 'start' });
+    io.to(sessionId).emit('output', { sessionId, output: 'Running the code ...' });
     res.status(200).send("");
     const languages = {
         javascript: 'js',
