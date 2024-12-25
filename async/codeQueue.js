@@ -1,13 +1,3 @@
-/*
- This file is responsible for processing the code-runner queue.
-    It listens for new jobs and processes them asynchronously.
-    When a job is completed, it emits the result to the client through the socket.
-    This file is used in conjunction with the runCode utility function.
-    The runCode function is responsible for executing the code and streaming the output to the client.
-    The code-runner queue is created using the Bull library, which provides a simple interface for creating and processing queues.
-    by @ghoshpushpendu 
-*/
-
 import Queue from 'bull';
 import runCode from './../util/runCode.js';
 import { io } from '../config/socket.config.js';
@@ -35,6 +25,21 @@ codeQueue.process(1, async (job) => {
         console.error('Error processing job:', error);
         throw error;
     }
+});
+
+// Handling the completion of jobs and removing them
+codeQueue.on('completed', async (job, result) => {
+    console.log(`Job completed: ${job.id}`);
+    // You can clean up jobs if necessary or log their completion
+    await job.remove();  // Optional: This ensures the job is removed after completion
+    console.log(`Job removed from queue: ${job.id}`);
+});
+
+codeQueue.on('failed', async (job, err) => {
+    console.error(`Job failed: ${job.id}, Error: ${err}`);
+    // Optionally, you can remove the failed job as well
+    await job.remove();  // Optional: This removes failed jobs
+    console.log(`Failed job removed from queue: ${job.id}`);
 });
 
 export default codeQueue;
