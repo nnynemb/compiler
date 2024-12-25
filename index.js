@@ -6,22 +6,12 @@ import { buildSchema } from 'graphql';
 import connect from './config/db.config.js'; // Your DB connection utility
 import Session from './modules/session/session.model.js';
 import User from './modules/user/user.model.js';
-import Redis from 'ioredis'; // Import ioredis
 import http from 'http';
-import { Server as SocketIoServer } from 'socket.io'; // Correct import for Socket.IO
-import { createAdapter } from '@socket.io/redis-adapter'; // Import Redis Adapter
-
-// Create Redis clients for the adapter
-const redisHost = process.env.REDIS_URL || 'localhost'; // Replace with your Redis host
-const redisPort = process.env.REDIS_PORT || 6379; // Replace with your Redis port
-const redisPassword = process.env.REDIS_PASSWORD || ''; // Add your Redis password here if needed
-
-const pubClient = new Redis({ host: redisHost, port: redisPort, password: redisPassword });
-const subClient = pubClient.duplicate();
-
-// Handle Redis errors
-pubClient.on('error', (err) => console.error('Redis Publisher Error:', err));
-subClient.on('error', (err) => console.error('Redis Subscriber Error:', err));
+import { initializeSocket } from './config/socket.config.js';
+import codeQueue from './async/codeQueue.js';
+import rateLimit from 'express-rate-limit';
+import RedisStore from 'rate-limit-redis';
+import Redis from 'ioredis';
 
 // Initialize the app
 const app = express();
@@ -35,9 +25,49 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Redis client setup for rate limit (optional, for distributed systems)
+const redisClient = new Redis({
+  host: process.env.REDIS_URL || 'localhost', // Your Redis host
+  port: process.env.REDIS_PORT || 6379,       // Your Redis port
+  password: process.env.REDIS_PASSWORD || '',      // Your Redis password (if any)
+});
+
+// Set up rate limiting using express-rate-limit with optional Redis
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,                 // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests, please try again later.',
+  store: new RedisStore({
+    sendCommand: (...args) => redisClient.call(...args),
+  }),
+});
+
+// Apply rate limiter to all routes
+app.use(limiter);
+
 // Set up a simple route
-app.post('/run-code', (req, res) => {
-  runCode(req, res, io);
+app.post('/run-code', async (req, res) => {
+  const { code, language, sessionId } = req.body;
+
+  try {
+    // Check if a task with the same sessionId already exists in the queue
+    const existingJobs = await codeQueue.getJobs(['waiting', 'active', 'delayed']);
+    console.log('Existing jobs:', existingJobs);
+    const isTaskAlreadyQueued = existingJobs.some(job => job.data.sessionId === sessionId);
+
+    if (isTaskAlreadyQueued) {
+      return res.status(409).send('Task with the same sessionId is already in the queue');
+    }
+
+    // Add task to Bull queue
+    await codeQueue.add({ code, language, sessionId });
+
+    // Send immediate response
+    res.status(200).send('Task added to the queue');
+  } catch (error) {
+    console.error('Error adding task to queue:', error);
+    res.status(500).send('Failed to add task to queue');
+  }
 });
 
 // Define the port the server will listen on
@@ -166,44 +196,8 @@ app.use(
 // Create an HTTP server
 const server = http.createServer(app);
 
-// Create Socket.IO instance with Redis Adapter
-const io = new SocketIoServer(server, {
-  cors: {
-    origin: '*', // Allow all origins
-    methods: ['GET', 'POST'], // Allowed HTTP methods
-    allowedHeaders: ['Content-Type'], // Optional: allowed headers
-    credentials: false, // Set to true if authentication (cookies, etc.) is needed
-  },
-});
-
-// Attach Redis Adapter to Socket.IO
-io.adapter(createAdapter(pubClient, subClient));
-
-// Handle Socket.IO connections
-io.on('connection', (socket) => {
-  console.log('Socket connected:', socket.id);
-
-  // Listen for any event from the client
-  socket.onAny((event, ...args) => {
-    if (event === 'joinRoom') {
-      const room = args[0];
-      socket.join(room); // Join the room
-    } else {
-      const { language, code, ...others } = args[0];
-      const data = { id: event, channel: event, language, content: code, senderSocketId: socket.id, ...others };
-      sendSocketMessage(event, event, data);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    socket.leaveAll(); // Leave all rooms
-    console.log('Socket disconnected:', socket.id);
-  });
-});
-
-function sendSocketMessage(room, channel, data) {
-  io.to(room).emit(channel, data);
-}
+// Initialize Socket.IO with the server
+const io = initializeSocket(server); // Pass the HTTP server to initializeSocket
 
 // Start the server and connect to MongoDB
 server.listen(port, async () => {
@@ -212,5 +206,3 @@ server.listen(port, async () => {
 
   connect(); // Connect to MongoDB
 });
-
-//sample deployment script

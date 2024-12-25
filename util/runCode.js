@@ -3,75 +3,82 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-const runCode = async (req, res, io) => { // IO stands for soicket IO
-    const { code, language, sessionId } = req.body;
-    io.to(sessionId).emit('command', { sessionId, command: 'start' });
-    io.to(sessionId).emit('output', { sessionId, output: 'Running the code ...' });
-    res.status(200).send("");
-    const languages = {
-        javascript: 'js',
-        python: 'py',
-        java: 'java',
-    };
+const runCode = async (code, language, sessionId, io) => {
+  io.to(sessionId).emit('command', { sessionId, command: 'start' });
+  io.to(sessionId).emit('output', { sessionId, output: 'Running the code ...' });
 
-    const extension = languages[language];
+  const languages = {
+    javascript: 'js',
+    python: 'py',
+    java: 'java',
+  };
 
-    if (!extension) {
-        return res.status(400).send({ error: "Language not supported" });
+  const extension = languages[language];
+
+  if (!extension) {
+    io.to(sessionId).emit('output', { sessionId, output: 'Language is not supported' });
+    return; // Exit early if the language is unsupported
+  }
+
+  if (!code) {
+    io.to(sessionId).emit('output', { sessionId, output: 'No code provided' });
+    return; // Exit early if no code is provided
+  }
+
+  const uniqueId = uuidv4();
+  const fileName = `temp-code-${uniqueId}.${extension}`;
+  const tempFilePath = path.resolve('./codes', fileName);
+
+  try {
+    // Ensure the directory exists
+    if (!fs.existsSync('./codes')) {
+      fs.mkdirSync('./codes');
     }
 
-    if (!code) {
-        return res.status(400).send({ error: "No code provided" });
-    }
+    fs.writeFileSync(tempFilePath, code);
 
-    const uniqueId = uuidv4();
-    const fileName = `temp-code-${uniqueId}.${extension}`;
-    const tempFilePath = path.resolve('./codes', fileName);
+    // Wrap the child process in a Promise to track when it's finished
+    return new Promise((resolve, reject) => {
+      const child = spawn('python3', ['./runners/javascript.py', tempFilePath, language], {
+        shell: true,
+      });
 
-    try {
-        // Ensure the directory exists
-        if (!fs.existsSync('./codes')) {
-            fs.mkdirSync('./codes');
-        }
+      // Stream stdout in chunks
+      child.stdout.on('data', (chunk) => {
+        io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
+      });
 
-        fs.writeFileSync(tempFilePath, code);
+      // Stream stderr in chunks
+      child.stderr.on('data', (chunk) => {
+        io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
+      });
 
-        const child = spawn('python3', ['./runners/javascript.py', tempFilePath, language], {
-            shell: true,
-        });
+      // Handle process close
+      child.on('close', (code) => {
+        console.log(`Process exited with code: ${code}`);
+        fs.unlinkSync(tempFilePath); // Clean up
+        io.to(sessionId).emit('command', { sessionId, command: 'end' });
+        resolve("done");
+      });
 
-        // Stream stdout in chunks
-        child.stdout.on('data', (chunk) => {
-            io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
-        });
-
-        // Stream stderr in chunks
-        child.stderr.on('data', (chunk) => {
-            io.to(sessionId).emit('output', { sessionId, output: chunk.toString() });
-        });
-
-        // Handle process close
-        child.on('close', (code) => {
-            console.log(`Process exited with code: ${code}`);
-            fs.unlinkSync(tempFilePath); // Clean up
-            io.to(sessionId).emit('command', { sessionId, command: 'end' });
-        });
-
-        // Handle process errors
-        child.on('error', (err) => {
-            console.error('Child process error:', err.message);
-            fs.unlinkSync(tempFilePath); // Clean up
-            io.to(sessionId).emit('output', { sessionId, output: err.message });
-            io.to(sessionId).emit('command', { sessionId, command: 'end' });
-        });
-    } catch (err) {
-        if (fs.existsSync(tempFilePath)) {
-            fs.unlinkSync(tempFilePath);
-        }
-        console.error('Error:', err.message);
+      // Handle process errors
+      child.on('error', (err) => {
+        console.error('Child process error:', err.message);
+        fs.unlinkSync(tempFilePath); // Clean up
         io.to(sessionId).emit('output', { sessionId, output: err.message });
         io.to(sessionId).emit('command', { sessionId, command: 'end' });
+        reject(err);
+      });
+    });
+  } catch (err) {
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
     }
+    console.error('Error:', err.message);
+    io.to(sessionId).emit('output', { sessionId, output: err.message });
+    io.to(sessionId).emit('command', { sessionId, command: 'end' });
+    return "done";
+  }
 };
 
 export default runCode;
