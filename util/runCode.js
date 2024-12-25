@@ -55,7 +55,6 @@ const runCode = async (code, language, sessionId, io) => {
 
       // Handle process close
       child.on('close', (code) => {
-        console.log(`Process exited with code: ${code}`);
         fs.unlinkSync(tempFilePath); // Clean up
         io.to(sessionId).emit('command', { sessionId, command: 'end' });
         resolve("done");
@@ -63,7 +62,6 @@ const runCode = async (code, language, sessionId, io) => {
 
       // Handle process errors
       child.on('error', (err) => {
-        console.error('Child process error:', err.message);
         fs.unlinkSync(tempFilePath); // Clean up
         io.to(sessionId).emit('output', { sessionId, output: err.message });
         io.to(sessionId).emit('command', { sessionId, command: 'end' });
@@ -74,7 +72,6 @@ const runCode = async (code, language, sessionId, io) => {
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
     }
-    console.error('Error:', err.message);
     io.to(sessionId).emit('output', { sessionId, output: err.message });
     io.to(sessionId).emit('command', { sessionId, command: 'end' });
     return "done";

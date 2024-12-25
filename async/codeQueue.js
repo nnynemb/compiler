@@ -12,6 +12,11 @@ const redisOptions = {
 // Create a Bull queue for running code
 const codeQueue = new Queue('code-runner', {
     redis: redisOptions,
+    limiter: {
+        groupKey: 'sessionId', // Ensures that each session is limited to one task at a time
+        max: 1, // Allow only one job to be processed at a time
+        duration: 1000, // Maximum of 1 task per second
+    }
 });
 
 // Process the queue

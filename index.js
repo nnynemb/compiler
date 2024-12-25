@@ -52,7 +52,6 @@ app.post('/run-code', async (req, res) => {
   try {
     // Check if a task with the same sessionId already exists in the queue
     const existingJobs = await codeQueue.getJobs(['waiting', 'active', 'delayed']);
-    console.log('Existing jobs:', existingJobs);
     const isTaskAlreadyQueued = existingJobs.some(job => job.data.sessionId === sessionId);
 
     if (isTaskAlreadyQueued) {
