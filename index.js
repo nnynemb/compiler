@@ -1,5 +1,4 @@
 import express from 'express';
-import runCode from './util/runCode.js';
 import cors from 'cors';
 import connect from './config/db.config.js'; // Your DB connection utility
 import Session from './modules/session/session.model.js';
@@ -153,7 +152,7 @@ const port = process.env.PORT || 8000;
 const server = http.createServer(app);
 
 // Initialize Socket.IO with the server
-const io = initializeSocket(server); // Pass the HTTP server to initializeSocket
+initializeSocket(server); // Pass the HTTP server to initializeSocket
 
 // Start the server and connect to MongoDB
 server.listen(port, async () => {
