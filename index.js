@@ -1,8 +1,6 @@
 import express from 'express';
 import runCode from './util/runCode.js';
 import cors from 'cors';
-import { graphqlHTTP } from 'express-graphql';
-import { buildSchema } from 'graphql';
 import connect from './config/db.config.js'; // Your DB connection utility
 import Session from './modules/session/session.model.js';
 import User from './modules/user/user.model.js';
@@ -17,7 +15,7 @@ import Redis from 'ioredis';
 const app = express();
 app.use(cors({
   origin: '*', // Replace '*' with specific origin(s) in production
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PUT'],
   allowedHeaders: ['Content-Type'],
   credentials: true, // Allow cookies if needed
 }));
@@ -69,128 +67,87 @@ app.post('/run-code', async (req, res) => {
   }
 });
 
+// Session Routes (Replaced GraphQL)
+app.post('/sessions', async (req, res) => {
+  const { language, content } = req.body;
+
+  try {
+    const newSession = new Session({ language, content });
+    await newSession.save();
+    res.status(201).json(newSession);
+  } catch (error) {
+    console.error('Error creating session:', error);
+    res.status(500).send('Failed to create session');
+  }
+});
+
+app.get('/sessions', async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+  const skip = (page - 1) * limit;
+
+  try {
+    const sessions = await Session.find().skip(skip).limit(limit);
+    const totalCount = await Session.countDocuments();
+    res.status(200).json({ sessions, totalCount });
+  } catch (error) {
+    console.error('Error fetching sessions:', error);
+    res.status(500).send('Failed to fetch sessions');
+  }
+});
+
+app.get('/sessions/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const session = await Session.findById(id);
+    if (!session) {
+      return res.status(404).send('Session not found');
+    }
+    res.status(200).json(session);
+  } catch (error) {
+    console.error('Error fetching session:', error);
+    res.status(500).send('Failed to fetch session');
+  }
+});
+
+app.put('/sessions/:id', async (req, res) => {
+  const { id } = req.params;
+  const { language, content } = req.body;
+
+  try {
+    const updates = {};
+    if (language) updates.language = language;
+    if (content) updates.content = content;
+
+    const updatedSession = await Session.findByIdAndUpdate(id, updates, { new: true });
+
+    if (!updatedSession) {
+      return res.status(404).send('Session not found');
+    }
+
+    res.status(200).json(updatedSession);
+  } catch (error) {
+    console.error('Error updating session:', error);
+    res.status(500).send('Failed to update session');
+  }
+});
+
+// User Routes
+app.post('/users', async (req, res) => {
+  const { username, email } = req.body;
+
+  try {
+    const user = new User({ username, email });
+    await user.save();
+    res.status(201).json(user);
+  } catch (error) {
+    console.error('Error registering user:', error);
+    res.status(500).send('Failed to register user');
+  }
+});
+
 // Define the port the server will listen on
 const port = process.env.PORT || 8000;
-
-// Set up GraphQL
-// Define GraphQL schema
-const schema = buildSchema(`
-  type Session {
-    id: ID!
-    language: String!
-    content: String!
-    createdAt: String!
-    updatedAt: String!
-  }
-
-  type User {
-    id: ID!
-    username: String!
-    email: String!
-    phone: String!
-    createdAt: String!
-    updatedAt: String!
-  }
-
-  type RegisterUser {
-     username: String!
-     email: String
-  }
-
-  type Query {
-    getSession(id: ID!): Session
-    getUser(id: ID!): User
-  }
-
-  type Mutation {
-    generateSession(language: String!, content: String!): Session
-    updateSession(id: ID!, language: String, content: String): Session
-    registerUser(username: String, email: String): RegisterUser
-  }
-`);
-
-// Define resolvers
-const root = {
-  // Fetch session by ID
-  getSession: async ({ id }) => {
-    try {
-      const session = await Session.findById(id);
-      if (!session) {
-        throw new Error('Session not found');
-      }
-      return session;
-    } catch (error) {
-      throw new Error(`Error fetching session: ${error.message}`);
-    }
-  },
-
-  // Create a new session
-  generateSession: async ({ language, content }) => {
-    try {
-      const newSession = new Session({ language, content });
-      await newSession.save();
-      return newSession;
-    } catch (error) {
-      throw new Error(`Error creating session: ${error.message}`);
-    }
-  },
-
-  // Get user by Id
-  getUser: async ({ id }) => {
-    try {
-      const user = await User.findById(id);
-      if (!user) {
-        throw new Error(`User not found`);
-      }
-      return user;
-    } catch (error) {
-      throw new Error(`Error fetching user: ${error.message}`);
-    }
-  },
-
-  // Update a session
-  updateSession: async ({ id, language, content }) => {
-    try {
-      const updates = {};
-      if (language) updates.language = language;
-      if (content) updates.content = content;
-
-      const updatedSession = await Session.findByIdAndUpdate(
-        id,
-        { ...updates },
-        { new: true }
-      );
-
-      if (!updatedSession) {
-        throw new Error('Session not found');
-      }
-      return updatedSession;
-    } catch (error) {
-      throw new Error(`Error updating session: ${error.message}`);
-    }
-  },
-
-  // Register a new user
-  registerUser: async ({ username, email }) => {
-    try {
-      const user = new User({ username, email });
-      await user.save();
-      return user;
-    } catch (error) {
-      throw new Error(`Error registering user: ${error.message}`);
-    }
-  },
-};
-
-// Set up GraphQL endpoint
-app.use(
-  '/graphql',
-  graphqlHTTP({
-    schema: schema,
-    rootValue: root,
-    graphiql: true, // Enable GraphiQL interface
-  })
-);
 
 // Create an HTTP server
 const server = http.createServer(app);
@@ -201,7 +158,6 @@ const io = initializeSocket(server); // Pass the HTTP server to initializeSocket
 // Start the server and connect to MongoDB
 server.listen(port, async () => {
   console.log(`Server is running at http://localhost:${port}`);
-  console.log(`GraphQL API is available at http://localhost:${port}/graphql`);
 
   connect(); // Connect to MongoDB
 });
