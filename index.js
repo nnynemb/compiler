@@ -9,6 +9,7 @@ import codeQueue from './async/codeQueue.js';
 import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import Redis from 'ioredis';
+import sessionRoutes from './routes/session.route.js';
 
 // Initialize the app
 const app = express();
@@ -41,7 +42,7 @@ const limiter = rateLimit({
 
 // Apply rate limiter to all routes
 app.use(limiter);
-
+app.use('/sessions', sessionRoutes);
 // Set up a simple route
 app.post('/run-code', async (req, res) => {
   const { code, language, sessionId } = req.body;
@@ -63,71 +64,6 @@ app.post('/run-code', async (req, res) => {
   } catch (error) {
     console.error('Error adding task to queue:', error);
     res.status(500).send('Failed to add task to queue');
-  }
-});
-
-// Session Routes (Replaced GraphQL)
-app.post('/sessions', async (req, res) => {
-  const { language, content } = req.body;
-
-  try {
-    const newSession = new Session({ language, content });
-    await newSession.save();
-    res.status(201).json(newSession);
-  } catch (error) {
-    console.error('Error creating session:', error);
-    res.status(500).send('Failed to create session');
-  }
-});
-
-app.get('/sessions', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
-  const skip = (page - 1) * limit;
-
-  try {
-    const sessions = await Session.find().skip(skip).limit(limit);
-    const totalCount = await Session.countDocuments();
-    res.status(200).json({ sessions, totalCount });
-  } catch (error) {
-    console.error('Error fetching sessions:', error);
-    res.status(500).send('Failed to fetch sessions');
-  }
-});
-
-app.get('/sessions/:id', async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const session = await Session.findById(id);
-    if (!session) {
-      return res.status(404).send('Session not found');
-    }
-    res.status(200).json(session);
-  } catch (error) {
-    console.error('Error fetching session:', error);
-    res.status(500).send('Failed to fetch session');
-  }
-});
-
-app.put('/sessions/:id', async (req, res) => {
-  const { id } = req.params;
-  const { language, content } = req.body;
-
-  try {
-    const updates = {};
-    if (language) updates.language = language;
-    if (content) updates.content = content;
-
-    const updatedSession = await Session.findByIdAndUpdate(id, updates, { new: true });
-
-    if (!updatedSession) {
-      return res.status(404).send('Session not found');
-    }
-
-    res.status(200).json(updatedSession);
-  } catch (error) {
-    console.error('Error updating session:', error);
-    res.status(500).send('Failed to update session');
   }
 });
 
