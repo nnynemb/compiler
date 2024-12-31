@@ -1,8 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import connect from './config/db.config.js'; // Your DB connection utility
-import Session from './modules/session/session.model.js';
-import User from './modules/user/user.model.js';
+import User from './models/user.model.js';
 import http from 'http';
 import { initializeSocket } from './config/socket.config.js';
 import codeQueue from './async/codeQueue.js';

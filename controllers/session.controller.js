@@ -1,4 +1,4 @@
-import Session from '../modules/session/session.model.js';
+import Session from '../models/session.model.js';
 
 export const createSession = async (req, res) => {
   const { language, content } = req.body;
