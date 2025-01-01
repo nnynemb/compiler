@@ -8,7 +8,7 @@ const sessionSchema = new mongoose.Schema({
     description: { type: String, required: false },
     tags: { type: [String], required: false },
     impressions: { type: Number, required: false, default: 0 },
-    userId: { type: mongoose.Types.ObjectId, required: false, ref: 'User' }
+    userId: { type: String, required: false }
 }, {
     timestamps: true
 });

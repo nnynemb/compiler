@@ -20,6 +20,7 @@ const authenticate = async (req, res, next) => {
   const token = authHeader.split("Bearer ")[1];
   try {
     const decodedToken = await verifyIdToken(token);
+    console.log('Decoded token:', decodedToken);
     req.user = decodedToken; // Store user data in the request object
     next();
   } catch (error) {

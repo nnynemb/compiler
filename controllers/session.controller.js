@@ -2,8 +2,9 @@ import Session from '../models/session.model.js';
 
 export const createSession = async (req, res) => {
   const { language, content } = req.body;
+  const user = req.user;
   try {
-    const newSession = new Session({ language, content });
+    const newSession = new Session({ language, content, userId: user.user_id });
     await newSession.save();
     res.status(201).json(newSession);
   } catch (error) {
