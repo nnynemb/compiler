@@ -62,7 +62,7 @@ const limiter = rateLimit({
 app.use(limiter);
 app.use('/sessions', authenticate, sessionRoutes);
 // Set up a simple route
-app.post('/run-code', async (req, res) => {
+app.post('/run-code', authenticate, async (req, res) => {
   const { code, language, sessionId } = req.body;
 
   try {
