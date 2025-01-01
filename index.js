@@ -9,13 +9,32 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import Redis from 'ioredis';
 import sessionRoutes from './routes/session.route.js';
+import { verifyIdToken } from './config/firebase.config.js';
+
+// Middleware to protect routes and verify Firebase ID token
+const authenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).send("Unauthorized");
+  }
+  const token = authHeader.split("Bearer ")[1];
+  try {
+    const decodedToken = await verifyIdToken(token);
+    req.user = decodedToken; // Store user data in the request object
+    next();
+  } catch (error) {
+    console.error('Error verifying ID token:', error);
+    return res.status(401).send("Unauthorized");
+  }
+};
 
 // Initialize the app
 const app = express();
+// CORS configuration to allow all methods
 app.use(cors({
-  origin: '*', // Replace '*' with specific origin(s) in production
-  methods: ['GET', 'POST', 'PUT'],
-  allowedHeaders: ['Content-Type'],
+  origin: '*', // Replace '*' with specific origin(s) in production for better security
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // Explicitly list all HTTP methods
+  allowedHeaders: ['Content-Type', 'Authorization'], // Include any headers your API requires
   credentials: true, // Allow cookies if needed
 }));
 
@@ -41,7 +60,7 @@ const limiter = rateLimit({
 
 // Apply rate limiter to all routes
 app.use(limiter);
-app.use('/sessions', sessionRoutes);
+app.use('/sessions', authenticate, sessionRoutes);
 // Set up a simple route
 app.post('/run-code', async (req, res) => {
   const { code, language, sessionId } = req.body;
@@ -92,6 +111,5 @@ initializeSocket(server); // Pass the HTTP server to initializeSocket
 // Start the server and connect to MongoDB
 server.listen(port, async () => {
   console.log(`Server is running at http://localhost:${port}`);
-
   connect(); // Connect to MongoDB
 });
