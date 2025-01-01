@@ -43,12 +43,14 @@ export const getSessionById = async (req, res) => {
 export const updateSession = async (req, res) => {
   const { id } = req.params;
   const { language, content } = req.body;
+  const user = req.user;
+  const userId = user.user_id;
   try {
     const updates = {};
     if (language) updates.language = language;
     if (content) updates.content = content;
-
-    const updatedSession = await Session.findByIdAndUpdate(id, updates, { new: true });
+    const query = { _id: id, userId };
+    const updatedSession = await Session.findOneAndUpdate(query, updates, { new: true });
     if (!updatedSession) {
       return res.status(404).send('Session not found');
     }
