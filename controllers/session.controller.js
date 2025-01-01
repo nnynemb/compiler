@@ -43,8 +43,7 @@ export const getSessionById = async (req, res) => {
 export const updateSession = async (req, res) => {
   const { id } = req.params;
   const { language, content } = req.body;
-  const user = req.user;
-  const userId = user.user_id;
+  const userId = req.user.user_id;
   try {
     const updates = {};
     if (language) updates.language = language;
