@@ -10,6 +10,7 @@ import RedisStore from 'rate-limit-redis';
 import Redis from 'ioredis';
 import sessionRoutes from './routes/session.route.js';
 import { verifyIdToken } from './config/firebase.config.js';
+import sessionStore from './stores/sessions.stores.js';
 
 // Middleware to protect routes and verify Firebase ID token
 const authenticate = async (req, res, next) => {
@@ -20,7 +21,6 @@ const authenticate = async (req, res, next) => {
   const token = authHeader.split("Bearer ")[1];
   try {
     const decodedToken = await verifyIdToken(token);
-    console.log('Decoded token:', decodedToken);
     req.user = decodedToken; // Store user data in the request object
     next();
   } catch (error) {
@@ -83,6 +83,9 @@ app.post('/run-code', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error adding task to queue:', error);
     res.status(500).send('Failed to add task to queue');
+  } finally {
+    // update the code in the session
+    await sessionStore.updateCodeInSession(sessionId, code);
   }
 });
 
